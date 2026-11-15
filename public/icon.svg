@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#05070c" />
+    </radialGradient>
+    <linearGradient id="cyberGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="50%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#065f46" />
+    </linearGradient>
+    <linearGradient id="cyberCyan" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)" />
+
+  <!-- Outer HUD Ring & Crosshairs -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#1e293b" stroke-width="4" />
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#06b6d4" stroke-width="2" stroke-dasharray="14 10" opacity="0.4" />
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#10b981" stroke-width="1.5" stroke-dasharray="8 6" opacity="0.6" />
+
+  <!-- Outer Ticks -->
+  <line x1="256" y1="36" x2="256" y2="56" stroke="#34d399" stroke-width="4" />
+  <line x1="256" y1="456" x2="256" y2="476" stroke="#34d399" stroke-width="4" />
+  <line x1="36" y1="256" x2="56" y2="256" stroke="#06b6d4" stroke-width="4" />
+  <line x1="456" y1="256" x2="476" y2="256" stroke="#06b6d4" stroke-width="4" />
+
+  <!-- Tactical Hex Shield -->
+  <polygon points="256,90 380,162 380,306 256,378 132,306 132,162"
+           fill="none" stroke="#0f766e" stroke-width="3" opacity="0.7" />
+
+  <!-- Core Axiom Delta Shape (Axiom / Maya Logo) -->
+  <path d="M 256 128 L 356 324 L 296 324 L 256 244 L 216 324 L 156 324 Z"
+        fill="url(#cyberGreen)" filter="url(#glow)" />
+
+  <!-- Cyber Node Core -->
+  <polygon points="256,180 300,270 212,270" fill="#042f2e" opacity="0.8" />
+  <circle cx="256" cy="245" r="14" fill="#38bdf8" filter="url(#glow)" />
+  <circle cx="256" cy="245" r="6" fill="#ffffff" />
+
+  <!-- Data Pulse Nodes -->
+  <circle cx="256" cy="128" r="8" fill="#34d399" />
+  <circle cx="356" cy="324" r="8" fill="#34d399" />
+  <circle cx="156" cy="324" r="8" fill="#34d399" />
+
+  <!-- Monogram Brand Arc -->
+  <text x="256" y="420" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="28" letter-spacing="6" fill="#e2e8f0">
+    AXIOM // MAYA
+  </text>
+  <text x="256" y="442" text-anchor="middle" font-family="monospace" font-weight="600" font-size="13" letter-spacing="4" fill="#10b981">
+    INTELLIGENCE SYSTEM
+  </text>
+</svg>

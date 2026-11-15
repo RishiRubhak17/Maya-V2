@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "Memory": {
+      "title": "CloudMemory",
+      "description": "Private persistent memory stored in Firestore for Maya AI assistant.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "value": { "type": "string" },
+        "category": { "type": "string" },
+        "userId": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["key", "value", "userId"]
+    },
+    "DashboardSnapshot": {
+      "title": "DashboardSnapshot",
+      "description": "Private dashboard state and metrics snapshot stored in Firestore for Maya.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "tasksCount": { "type": "number" },
+        "completedTasksCount": { "type": "number" },
+        "remindersCount": { "type": "number" },
+        "summary": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/memory/{memoryId}": {
+      "schema": "Memory",
+      "description": "Private cloud memories for a specific user."
+    },
+    "/users/{userId}/dashboard/{snapshotId}": {
+      "schema": "DashboardSnapshot",
+      "description": "Dashboard telemetry and state snapshot."
+    }
+  }
+}

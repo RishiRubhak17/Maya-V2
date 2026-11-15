@@ -1,0 +1,478 @@
+@import "tailwindcss";
+
+:root {
+  --accent: #00E5FF;
+  --accent-gold: #F59E0B;
+  --glow: rgba(0, 229, 255, 0.25);
+  --anim-speed: 1;
+  --brightness: 1;
+  --bg-base: #0A0A0A;
+  --bg-panel: rgba(18, 18, 18, 0.75);
+  --bg-elevated: #1E1E1E;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-panel: rgba(255, 255, 255, 0.08);
+  --text-main: #EDEDED;
+  --text-dim: #9E9E9E;
+  --text-faint: #525252;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-main);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  code, pre, .font-mono, input, textarea {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.font-sans {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+}
+
+.font-hud {
+  font-family: 'Rajdhani', 'Plus Jakarta Sans', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* Glassmorphism & Surface Layering */
+.glass-panel {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: rgba(18, 18, 18, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.surface-card {
+  background-color: #1E1E1E;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.neon-glow {
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.15);
+}
+
+.neon-glow-strong {
+  box-shadow: 0 0 25px rgba(0, 229, 255, 0.28);
+}
+
+.neon-glow-gold {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+}
+
+/* Micro-interaction Scale */
+.interactive-hover {
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out, border-color 200ms ease-out, background-color 200ms ease-out;
+}
+
+.interactive-hover:hover {
+  transform: scale(1.02);
+}
+
+.interactive-hover:active {
+  transform: scale(0.98);
+}
+
+/* Pulsing Skeleton Loader */
+@keyframes skeletonPulse {
+  0%, 100% {
+    opacity: 0.45;
+    background-position: 0% 50%;
+  }
+  50% {
+    opacity: 0.9;
+    background-position: 100% 50%;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(30, 30, 30, 0.8) 0%,
+    rgba(45, 45, 45, 0.95) 50%,
+    rgba(30, 30, 30, 0.8) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeletonPulse 1.8s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* Console Chat Message Entrance (Fade-in + Slide-up) */
+@keyframes chatMessageFadeSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mayaResponseTextReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-message-enter {
+  animation: chatMessageFadeSlideUp 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+.chat-message-enter-maya {
+  animation: chatMessageFadeSlideUp 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+.chat-message-enter-maya .chat-message-body {
+  animation: mayaResponseTextReveal 380ms cubic-bezier(0.16, 1, 0.3, 1) 70ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-message-enter,
+  .chat-message-enter-maya,
+  .chat-message-enter-maya .chat-message-body {
+    animation: none !important;
+  }
+}
+
+/* Background Vignette & Scanlines */
+.hud-vignette {
+  background: radial-gradient(circle at 50% 50%, #0c0c0e 0%, #070708 85%);
+}
+
+.hud-grid-bg {
+  background-image: 
+    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Scanline Sweep */
+.hud-scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    rgba(255, 255, 255, 0) 50%,
+    rgba(255, 255, 255, 0.02) 50%
+  ),
+  linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.01),
+    rgba(255, 255, 255, 0.01)
+  );
+  background-size: 100% 3px, 3px 100%;
+  z-index: 40;
+}
+
+.hud-scanline-sweep {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(255, 255, 255, 0.03) 50%,
+    transparent 100%
+  );
+  animation: scanlineSweep 8s linear infinite;
+  z-index: 41;
+}
+
+@keyframes scanlineSweep {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+/* Tab Slanted Corner (eDEX-UI style) */
+.clip-slanted-tr {
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+}
+
+.clip-slanted-both {
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 10px);
+}
+
+.clip-slanted-top {
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%, 0 8px);
+}
+
+/* eDEX-UI Panel styling */
+.edex-panel {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-panel);
+  position: relative;
+  transition: border-color 150ms ease, box-shadow 150ms ease, filter 300ms ease;
+  filter: brightness(var(--brightness));
+}
+
+.edex-panel:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-panel));
+}
+
+/* Micro-glitch animation (rare 1-frame) */
+@keyframes microGlitch {
+  0%, 98%, 100% { transform: none; opacity: 1; }
+  99% { transform: translate(1px, -1px); opacity: 0.95; }
+}
+
+.ambient-glitch {
+  animation: microGlitch 12s infinite;
+}
+
+/* Blinking Block Cursor */
+.terminal-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  background-color: var(--accent);
+  vertical-align: -0.15em;
+  margin-left: 2px;
+  animation: blinkCursor 1s steps(1) infinite;
+}
+
+@keyframes blinkCursor {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Soft Glow helper */
+.accent-glow {
+  box-shadow: 0 0 12px var(--glow);
+}
+
+.accent-text-glow {
+  text-shadow: 0 0 8px var(--glow);
+}
+
+/* Custom Tactical Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #232326;
+  border-radius: 0px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3e3e44;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ============================================================
+   MAYA HOLOGRAPHIC CORE: CONCENTRIC RINGS (Pure CSS, 60fps GPU)
+   ============================================================ */
+
+.maya {
+  --accent: #d6d3cc;
+  --speed: 1;
+  --level: 0;
+  --glow: 0.35;
+  --breath: 1;
+  position: relative;
+  width: 220px;
+  height: 220px;
+  user-select: none;
+  contain: layout style;
+}
+
+/* Faint dark halo backdrop (makes core pop on light and dark wallpapers) */
+.maya-halo {
+  position: absolute;
+  inset: -15px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.65) 0%, rgba(0, 0, 0, 0.35) 45%, transparent 72%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.maya .ring {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+  z-index: 2;
+}
+
+/* Ring 1: Thin dashed outer ring */
+.maya .r1 {
+  inset: 0;
+  border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: mayaSpin calc(40s / var(--speed)) linear infinite;
+}
+
+/* Ring 2: Segmented arcs (counter-rotates, accelerates in thinking) */
+.maya .r2 {
+  inset: 14px;
+  background: conic-gradient(
+    var(--accent) 0 70deg,
+    transparent 70deg 180deg,
+    var(--accent) 180deg 230deg,
+    transparent 230deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  animation: mayaSpin calc(14s / var(--speed)) linear infinite reverse;
+}
+
+/* Ring 3: Fine tick marks like arc reactor / HUD dials */
+.maya .r3 {
+  inset: 30px;
+  opacity: 0.5;
+  background: repeating-conic-gradient(var(--accent) 0 1deg, transparent 1deg 6deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 7px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 7px));
+  animation: mayaSpin calc(60s / var(--speed)) linear infinite;
+}
+
+/* Scan sweep: Rotating sector of light active only when working/processing */
+.maya .scan {
+  inset: 22px;
+  opacity: 0;
+  background: conic-gradient(from 0deg, transparent 0 300deg, var(--accent) 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent 60%, #000 61%);
+  mask: radial-gradient(farthest-side, transparent 60%, #000 61%);
+  animation: mayaSpin calc(2.5s / var(--speed)) linear infinite;
+  transition: opacity 0.3s ease;
+}
+
+/* Voice Ring: Ripples outward with speech audio level */
+.maya .voice-ring {
+  inset: 46px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 50%;
+  transform: scale(calc(0.95 + var(--level) * 0.4));
+  opacity: calc(0.2 + var(--level) * 0.7);
+  transition: transform 60ms linear, opacity 100ms ease;
+  pointer-events: none;
+}
+
+/* Core: Glowing center pulsing with voice and breath */
+.maya .core {
+  inset: 62px;
+  background: radial-gradient(circle, #f4f2ec 0%, var(--accent) 38%, transparent 72%);
+  opacity: var(--glow);
+  transform: scale(calc((0.9 + var(--level) * 0.35) * var(--breath)));
+  transition: transform 80ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.6s ease;
+  cursor: grab;
+  z-index: 5;
+}
+
+.maya .core:active {
+  cursor: grabbing;
+}
+
+/* Micro-glint across the core so she never looks frozen */
+.maya .core::after {
+  content: '';
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, transparent 60%);
+  opacity: 0.3;
+  animation: coreGlint 8s ease-in-out infinite alternate;
+}
+
+@keyframes coreGlint {
+  0% { transform: scale(0.9) rotate(0deg); opacity: 0.15; }
+  50% { transform: scale(1.05) rotate(180deg); opacity: 0.4; }
+  100% { transform: scale(0.9) rotate(360deg); opacity: 0.15; }
+}
+
+/* States */
+.maya[data-state="working"] .scan { opacity: 0.8; }
+.maya[data-state="working"] .r3 { animation-duration: calc(20s / var(--speed)); }
+
+.maya[data-state="sleeping"] {
+  --speed: 0.25;
+  --glow: 0.12;
+}
+.maya[data-state="sleeping"] .ring {
+  animation-play-state: paused;
+}
+
+.maya[data-state="waking"] {
+  --speed: 1.8;
+  --glow: 0.7;
+  animation: wakeFlash 0.6s ease-out;
+}
+@keyframes wakeFlash {
+  0% { filter: brightness(1.8); }
+  100% { filter: brightness(1); }
+}
+
+.maya[data-state="listening"] {
+  --speed: 1.6;
+  --glow: 0.6;
+}
+
+.maya[data-state="thinking"] .r2 {
+  animation-duration: 3s !important;
+}
+.maya[data-state="thinking"] {
+  --glow: 0.55;
+}
+
+.maya[data-state="speaking"] {
+  --speed: 1.2;
+  --glow: 0.65;
+}
+
+.maya[data-state="follow_up"] {
+  --speed: 1.0;
+  --glow: 0.45;
+}
+
+.maya[data-state="error"] {
+  --accent: #c4524f !important;
+  animation: errorFlash 0.5s ease-out;
+}
+@keyframes errorFlash {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(2) drop-shadow(0 0 16px #c4524f); }
+}
+
+.maya[data-state="offline"] {
+  --speed: 0.4;
+  --glow: 0.15;
+  filter: grayscale(0.6);
+}
+
+@keyframes mayaSpin {
+  to { transform: rotate(360deg); }
+}

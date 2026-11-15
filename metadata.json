@@ -1,0 +1,10 @@
+{
+  "name": "Axiom Intelligence // Maya-SIRIUS",
+  "description": "Personal executive AI assistant for Sirius, Founder \u0026 CEO of Axiom Secure Crafts (ASC). Features 5 tactical operational modes, cybersecurity analysis, voice synthesis, project radar, and push notifications.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
