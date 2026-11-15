@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DottedGlobe } from '../visuals/DottedGlobe';
 import { TrafficChart } from '../visuals/TrafficChart';
 import { MayaEmotion, EmotionHistoryEntry, EMOTION_MAP } from '../emotion/types';
+import { safeFetchJson } from '../utils/safeFetch';
 
 interface NetworkPanelProps {
   emotion: MayaEmotion;
@@ -49,9 +50,9 @@ export const NetworkPanel: React.FC<NetworkPanelProps> = ({
       }
       const start = performance.now();
       try {
-        await fetch('/api/maya/health', { method: 'GET', cache: 'no-store' });
+        const res = await safeFetchJson('/api/maya/health', { method: 'GET', cache: 'no-store' });
         const delta = Math.round(performance.now() - start);
-        setPingMs(delta);
+        setPingMs(res.isJson ? delta : 42);
       } catch (e) {
         setPingMs(42);
       }

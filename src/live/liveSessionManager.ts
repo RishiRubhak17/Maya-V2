@@ -8,6 +8,10 @@ import { toolBridge } from '../tools/toolBridge';
 import { emotionStore } from '../emotion/emotionStore';
 import { VoiceprintEngine } from '../voice/voiceprintEngine';
 import { VerificationResult } from '../voice/types';
+import { safeFetchJson } from '../utils/safeFetch';
+import { getFallbackResponse } from '../shared/mayaCore';
+import { voiceSynthesisService } from '../services/voiceSynthesisService';
+import { MayaMode } from '../types';
 
 export type LiveVoiceState = 'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING';
 
@@ -41,9 +45,18 @@ export class LiveSessionManager {
   private silenceTimer: any = null;
   private levelAnimFrame: number | null = null;
   private isConnected: boolean = false;
+  private isDisconnecting: boolean = false;
+  private serverlessMode: boolean = false;
+  private wsConnectTimeout: any = null;
+  private recognition: any = null;
+  private isHandlingTurn: boolean = false;
+  private lastVoiceRejectedAt: number = 0;
+  private serverlessHistory: Array<{ sender: 'sirius' | 'maya'; text: string }> = [];
   private voice: string = 'Aoede';
   private mode: string = 'COMMAND';
   private userName: string = 'Sirius';
+  private affectionLevel: number = 2;
+  private memoryContext: string = '';
   private voiceLockEnabled: boolean = true;
   private voiceLockSensitivity: number = 70;
   private unverifiedSpeechFrames: number = 0;
@@ -94,24 +107,43 @@ export class LiveSessionManager {
     this.mode = options?.mode || this.mode;
     this.voice = options?.voice || this.voice;
     this.userName = options?.userName || this.userName;
+    this.affectionLevel = options?.affectionLevel ?? 2;
+    this.memoryContext = options?.memoryContext || '';
 
     this.disconnect();
+    this.isDisconnecting = false;
+    this.serverlessMode = false;
+    this.serverlessHistory = [];
+    this.lastVoiceRejectedAt = 0;
+    this.unverifiedSpeechFrames = 0;
+
     this.callbacks.onLog('LIVE SESSION: Connecting to Gemini Live bridge...');
     this.setState('THINKING');
 
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const affection = options?.affectionLevel ?? 2;
-      const memParam = options?.memoryContext ? `&memory=${encodeURIComponent(options.memoryContext)}` : '';
       const wsUrl = `${protocol}//${window.location.host}/live?mode=${encodeURIComponent(
         this.mode
       )}&voice=${encodeURIComponent(this.voice)}&user=${encodeURIComponent(
         this.userName
-      )}&affection=${affection}${memParam}`;
+      )}&affection=${this.affectionLevel}${
+        this.memoryContext ? `&memory=${encodeURIComponent(this.memoryContext)}` : ''
+      }`;
 
       this.ws = new WebSocket(wsUrl);
 
+      // Fallback cleanly to Serverless Voice Mode when hosted statically (e.g., Netlify) without WebSocket server
+      this.wsConnectTimeout = setTimeout(() => {
+        if (!this.isConnected && !this.isDisconnecting && !this.serverlessMode) {
+          void this.activateServerlessVoiceMode(options?.initialCommand);
+        }
+      }, 2200);
+
       this.ws.onopen = async () => {
+        if (this.wsConnectTimeout) {
+          clearTimeout(this.wsConnectTimeout);
+          this.wsConnectTimeout = null;
+        }
         this.isConnected = true;
         this.callbacks.onLog('LIVE SESSION: WebSocket stream established. Activating microphone pipeline.');
         await this.startMicrophoneCapture();
@@ -183,23 +215,231 @@ export class LiveSessionManager {
       };
 
       this.ws.onerror = () => {
-        this.callbacks.onLog(`LIVE SESSION WS ERROR: Transport event.`);
+        if (!this.isConnected && !this.isDisconnecting && !this.serverlessMode) {
+          void this.activateServerlessVoiceMode(options?.initialCommand);
+        } else {
+          this.callbacks.onLog('LIVE SESSION WS ERROR: Transport event.');
+        }
       };
 
       this.ws.onclose = () => {
-        this.callbacks.onLog('LIVE SESSION: Socket closed.');
-        this.disconnect();
+        if (!this.isConnected && !this.isDisconnecting && !this.serverlessMode) {
+          void this.activateServerlessVoiceMode(options?.initialCommand);
+          return;
+        }
+        if (this.isConnected && !this.serverlessMode && !this.isDisconnecting) {
+          this.callbacks.onLog('LIVE SESSION: Socket closed.');
+          this.disconnect();
+        }
       };
 
       return true;
     } catch (err: any) {
-      this.callbacks.onLog(`LIVE SESSION FAILED: ${err?.message || err}`);
-      this.disconnect();
-      return false;
+      this.callbacks.onLog(`LIVE SESSION FALLBACK: ${err?.message || err}`);
+      await this.activateServerlessVoiceMode(options?.initialCommand);
+      return true;
+    }
+  }
+
+  private async activateServerlessVoiceMode(initialCommand?: string): Promise<void> {
+    if (this.serverlessMode || this.isDisconnecting) return;
+    this.serverlessMode = true;
+    this.isConnected = true;
+
+    if (this.wsConnectTimeout) {
+      clearTimeout(this.wsConnectTimeout);
+      this.wsConnectTimeout = null;
+    }
+
+    if (this.ws) {
+      try {
+        this.ws.onopen = null;
+        this.ws.onmessage = null;
+        this.ws.onerror = null;
+        this.ws.onclose = null;
+        this.ws.close();
+      } catch {
+        // ignore
+      }
+      this.ws = null;
+    }
+
+    this.callbacks.onLog('LIVE SESSION: Serverless Voice Mode engaged (Speech Recognition + /api/maya/chat).');
+    await this.startMicrophoneCapture();
+    this.startLevelMonitoring();
+    this.resetSilenceTimer();
+
+    if (initialCommand && initialCommand.trim()) {
+      await this.handleServerlessTurn(initialCommand.trim());
+    } else {
+      this.setState('LISTENING');
+      this.startServerlessRecognition();
+    }
+  }
+
+  private startServerlessRecognition(): void {
+    if (!this.serverlessMode || this.isDisconnecting || this.currentState === 'SPEAKING' || this.isHandlingTurn) {
+      return;
+    }
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      this.callbacks.onLog('LIVE SESSION: Browser SpeechRecognition unavailable; type commands or use Chrome/Edge.');
+      this.setState('LISTENING');
+      return;
+    }
+
+    this.stopServerlessRecognition();
+
+    try {
+      const rec = new SpeechRec();
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.lang = 'en-IN';
+      rec.maxAlternatives = 1;
+
+      rec.onresult = (event: any) => {
+        if (!this.serverlessMode || this.isDisconnecting || this.isHandlingTurn) return;
+        const resultIdx = event.results.length - 1;
+        const transcript = event.results[resultIdx]?.[0]?.transcript?.trim();
+        if (!transcript) return;
+
+        // If Voice Biometrics rejected the active speaker within the last 4 seconds, discard transcript
+        if (this.voiceLockEnabled && VoiceprintEngine.hasProfile() && Date.now() - this.lastVoiceRejectedAt < 4000) {
+          this.callbacks.onLog('VOICE LOCK: Discarded speech transcript from unverified speaker.');
+          return;
+        }
+
+        this.resetSilenceTimer();
+        void this.handleServerlessTurn(transcript);
+      };
+
+      rec.onerror = (event: any) => {
+        if (event?.error && event.error !== 'no-speech' && event.error !== 'aborted') {
+          this.callbacks.onLog(`VOICE RECOGNITION NOTICE: ${event.error}`);
+        }
+      };
+
+      rec.onend = () => {
+        if (
+          this.serverlessMode &&
+          !this.isDisconnecting &&
+          this.currentState === 'LISTENING' &&
+          !this.isHandlingTurn
+        ) {
+          setTimeout(() => this.startServerlessRecognition(), 250);
+        }
+      };
+
+      this.recognition = rec;
+      rec.start();
+    } catch (err: any) {
+      this.callbacks.onLog(`VOICE RECOGNITION ERROR: ${err?.message || err}`);
+    }
+  }
+
+  private stopServerlessRecognition(): void {
+    if (this.recognition) {
+      try {
+        this.recognition.onresult = null;
+        this.recognition.onerror = null;
+        this.recognition.onend = null;
+        this.recognition.abort();
+      } catch {
+        // ignore
+      }
+      this.recognition = null;
+    }
+  }
+
+  private async handleServerlessTurn(transcript: string): Promise<void> {
+    if (!transcript.trim() || this.isDisconnecting) return;
+
+    this.isHandlingTurn = true;
+    this.stopServerlessRecognition();
+    this.setState('THINKING');
+    this.callbacks.onTranscript('sirius', transcript, true);
+    this.serverlessHistory.push({ sender: 'sirius', text: transcript });
+
+    const isExiting = this.checkExitCommand(transcript);
+
+    try {
+      const res = await safeFetchJson('/api/maya/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: transcript,
+          mode: this.mode,
+          history: this.serverlessHistory.slice(-6),
+          userName: this.userName,
+          affectionLevel: this.affectionLevel,
+          relationshipContext: this.memoryContext,
+        }),
+      });
+
+      const data =
+        res.ok && res.data
+          ? res.data
+          : {
+              reply: getFallbackResponse(transcript, this.mode, this.userName),
+              functionCalls: [],
+              detectedEmotion: null,
+            };
+
+      if (data.detectedEmotion) {
+        emotionStore.setEmotion(data.detectedEmotion.emotion, data.detectedEmotion.intensity, this.callbacks.onLog);
+        this.callbacks.onEmotionChange?.(data.detectedEmotion.emotion, data.detectedEmotion.intensity);
+      }
+
+      if (Array.isArray(data.functionCalls) && data.functionCalls.length > 0) {
+        for (const fc of data.functionCalls) {
+          await toolBridge.executeTool(fc.name, fc.args || {}, {
+            onLog: this.callbacks.onLog,
+            onModeChange: this.callbacks.onModeChange,
+            onAddTask: this.callbacks.onAddTask,
+            onCompleteTask: this.callbacks.onCompleteTask,
+            onSaveNote: this.callbacks.onSaveNote,
+          });
+        }
+      }
+
+      const reply = (data.reply || `Acknowledged, ${this.userName}.`).trim();
+      this.callbacks.onTranscript('maya', reply, true);
+      this.serverlessHistory.push({ sender: 'maya', text: reply });
+      this.resetSilenceTimer();
+
+      await new Promise<void>((resolve) => {
+        void voiceSynthesisService.speak({
+          text: reply,
+          voice: this.voice,
+          mode: this.mode as MayaMode,
+          maxLength: 260,
+          onStart: () => {
+            if (!this.isDisconnecting) {
+              this.setState('SPEAKING');
+            }
+          },
+          onEnd: () => resolve(),
+        });
+        setTimeout(resolve, 15000);
+      });
+    } catch (err: any) {
+      this.callbacks.onLog(`SERVERLESS VOICE ERROR: ${err?.message || err}`);
+    } finally {
+      this.isHandlingTurn = false;
+      if (!this.isDisconnecting && this.serverlessMode && !isExiting) {
+        this.setState('LISTENING');
+        this.resetSilenceTimer();
+        this.startServerlessRecognition();
+      }
     }
   }
 
   public sendTextMessage(text: string) {
+    if (this.serverlessMode && this.isConnected) {
+      void this.handleServerlessTurn(text);
+      return;
+    }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.setState('THINKING');
       this.ws.send(JSON.stringify({ type: 'text', text }));
@@ -209,12 +449,28 @@ export class LiveSessionManager {
 
   public interrupt() {
     this.audioPlayer.stopAll();
+    voiceSynthesisService.stop();
     this.setState('LISTENING');
+    if (this.serverlessMode && !this.isHandlingTurn) {
+      this.startServerlessRecognition();
+    }
   }
 
   public disconnect() {
+    const wasActive = this.isConnected || this.currentState !== 'IDLE' || this.ws !== null;
+    this.isDisconnecting = true;
     this.isConnected = false;
+    this.serverlessMode = false;
+    this.isHandlingTurn = false;
+
+    if (this.wsConnectTimeout) {
+      clearTimeout(this.wsConnectTimeout);
+      this.wsConnectTimeout = null;
+    }
+
     this.clearSilenceTimer();
+    this.stopServerlessRecognition();
+
     if (this.levelAnimFrame) {
       cancelAnimationFrame(this.levelAnimFrame);
       this.levelAnimFrame = null;
@@ -222,6 +478,10 @@ export class LiveSessionManager {
 
     if (this.ws) {
       try {
+        this.ws.onopen = null;
+        this.ws.onmessage = null;
+        this.ws.onerror = null;
+        this.ws.onclose = null;
         this.ws.close();
       } catch (e) {
         // ignore
@@ -231,8 +491,11 @@ export class LiveSessionManager {
 
     this.stopMicrophoneCapture();
     this.audioPlayer.stopAll();
+    voiceSynthesisService.stop();
     this.setState('IDLE');
-    this.callbacks.onSessionEnded?.();
+    if (wasActive) {
+      this.callbacks.onSessionEnded?.();
+    }
   }
 
   private setState(state: LiveVoiceState) {
@@ -275,7 +538,9 @@ export class LiveSessionManager {
       this.muteGain.connect(this.inputAudioCtx.destination);
 
       this.scriptProcessor.onaudioprocess = (e) => {
-        if (!this.isConnected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        if (!this.isConnected) return;
+        const canSendWs = !this.serverlessMode && this.ws && this.ws.readyState === WebSocket.OPEN;
+        if (!this.serverlessMode && !canSendWs) {
           return;
         }
 
@@ -303,6 +568,7 @@ export class LiveSessionManager {
             this.callbacks.onVoiceVerified?.(result);
           } else {
             this.unverifiedSpeechFrames++;
+            this.lastVoiceRejectedAt = Date.now();
             // When an unauthorized voice speaks (detected across 3 consecutive frames)
             if (this.unverifiedSpeechFrames === 3) {
               this.callbacks.onVoiceRejected?.(result);
@@ -324,16 +590,18 @@ export class LiveSessionManager {
           }
         }
 
-        // Resample from hardware rate (e.g. 48000Hz or 44100Hz) to 16000Hz expected by Gemini Live
-        const resampled = actualRate !== 16000
-          ? resampleAudioBuffer(inputChannel, actualRate, 16000)
-          : inputChannel;
+        if (canSendWs && this.ws) {
+          // Resample from hardware rate (e.g. 48000Hz or 44100Hz) to 16000Hz expected by Gemini Live
+          const resampled = actualRate !== 16000
+            ? resampleAudioBuffer(inputChannel, actualRate, 16000)
+            : inputChannel;
 
-        // Convert Float32 to 16-bit PCM little-endian
-        const pcmBuffer = floatTo16BitPCM(resampled);
-        const base64Audio = arrayBufferToBase64(pcmBuffer);
+          // Convert Float32 to 16-bit PCM little-endian
+          const pcmBuffer = floatTo16BitPCM(resampled);
+          const base64Audio = arrayBufferToBase64(pcmBuffer);
 
-        this.ws.send(JSON.stringify({ type: 'audio', audio: base64Audio }));
+          this.ws.send(JSON.stringify({ type: 'audio', audio: base64Audio }));
+        }
       };
     } catch (err: any) {
       this.callbacks.onLog(`MIC CAPTURE ERROR: ${err?.message || err}`);
@@ -424,7 +692,7 @@ export class LiveSessionManager {
     }
   }
 
-  private checkExitCommand(text: string) {
+  private checkExitCommand(text: string): boolean {
     const lower = text.toLowerCase().trim();
     if (
       lower.includes('bye maya') ||
@@ -437,7 +705,9 @@ export class LiveSessionManager {
       setTimeout(() => {
         this.disconnect();
       }, 1500);
+      return true;
     }
+    return false;
   }
 
   private async handleToolCall(toolCall: any) {

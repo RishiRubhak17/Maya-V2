@@ -2,6 +2,7 @@ import { emotionStore } from '../emotion/emotionStore';
 import { MayaEmotion } from '../emotion/types';
 import { getEmotionProsody, ResolvedVoiceProsody } from '../emotion/voiceProsody';
 import { MayaMode } from '../types';
+import { safeFetchJson } from '../utils/safeFetch';
 
 export interface SpeakOptions {
   text: string;
@@ -89,7 +90,7 @@ class VoiceSynthesisService {
 
     if (preferServerTts) {
       try {
-        const res = await fetch('/api/maya/tts', {
+        const res = await safeFetchJson('/api/maya/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -101,9 +102,9 @@ class VoiceSynthesisService {
             speakingRate,
           }),
         });
-        const data = await res.json();
+        const data = res.data;
 
-        if (data?.ok && data?.audio) {
+        if (res.ok && data?.ok && data?.audio) {
           const audio = new Audio(`data:${data.mimeType || 'audio/wav'};base64,${data.audio}`);
           const targetPlaybackRate =
             typeof data?.prosody?.audioPlaybackRate === 'number'

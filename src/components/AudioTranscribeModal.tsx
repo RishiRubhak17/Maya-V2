@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { X, Mic, Square, Upload, Copy, Download, Check, FileAudio, Sparkles, RefreshCw } from 'lucide-react';
+import { safeFetchJson } from '../utils/safeFetch';
 
 interface AudioTranscribeModalProps {
   isOpen: boolean;
@@ -112,7 +113,7 @@ export const AudioTranscribeModal: React.FC<AudioTranscribeModalProps> = ({
       const base64 = await blobToBase64(blob);
       const mimeType = blob.type || 'audio/webm';
 
-      const response = await fetch('/api/maya/transcribe', {
+      const res = await safeFetchJson('/api/maya/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -121,12 +122,11 @@ export const AudioTranscribeModal: React.FC<AudioTranscribeModalProps> = ({
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}`);
+      if (!res.ok || !res.data) {
+        throw new Error(res.error || `HTTP error ${res.status}`);
       }
 
-      const data = await response.json();
-      setTranscription(data.transcription || 'No audible speech recognized in this audio sample.');
+      setTranscription(res.data.transcription || 'No audible speech recognized in this audio sample.');
     } catch (err: any) {
       console.error('Transcription failed:', err);
       setError('Transcription failed. Please check your audio format or try again.');

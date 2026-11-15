@@ -1,4 +1,5 @@
 // Client-side Web Push Manager for Maya
+import { safeFetchJson } from '../utils/safeFetch';
 
 export const DEFAULT_VAPID_PUBLIC_KEY =
   'BGqZgwy9Y_9QIQ_jBtBPZz8T8xcREiZZOVSGihyZDxaGVl2EhVUNMYjTS4tHyXTqjlDI2xi-f2lNV3z8uAGZ39U';
@@ -82,7 +83,7 @@ export class PushNotificationService {
 
       // Send subscription to server
       const targetUrl = serverUrl.replace(/\/$/, '');
-      const response = await fetch(`${targetUrl}/api/push/subscribe`, {
+      const res = await safeFetchJson(`${targetUrl}/api/push/subscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,9 +95,8 @@ export class PushNotificationService {
         }),
       });
 
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        return { ok: false, error: data.error || 'Server rejected push subscription.' };
+      if (!res.ok || !res.data?.ok) {
+        return { ok: false, error: res.data?.error || res.error || 'Server rejected push subscription.' };
       }
 
       return { ok: true };
@@ -122,7 +122,7 @@ export class PushNotificationService {
         await sub.unsubscribe();
 
         const targetUrl = serverUrl.replace(/\/$/, '');
-        await fetch(`${targetUrl}/api/push/unsubscribe`, {
+        await safeFetchJson(`${targetUrl}/api/push/unsubscribe`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -144,22 +144,17 @@ export class PushNotificationService {
     serverUrl: string = '',
     serverToken: string = ''
   ): Promise<{ ok: boolean; message?: string; error?: string }> {
-    try {
-      const targetUrl = serverUrl.replace(/\/$/, '');
-      const res = await fetch(`${targetUrl}/api/push/test`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${serverToken}`,
-        },
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        return { ok: false, error: data.error || 'Server failed to send test notification.' };
-      }
-      return { ok: true, message: data.message };
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Network error reaching backend.' };
+    const targetUrl = serverUrl.replace(/\/$/, '');
+    const res = await safeFetchJson(`${targetUrl}/api/push/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serverToken}`,
+      },
+    });
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.data?.error || res.error || 'Server failed to send test notification.' };
     }
+    return { ok: true, message: res.data.message };
   }
 }

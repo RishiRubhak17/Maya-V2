@@ -1,4 +1,5 @@
 // Client-side synchronization manager for Maya tasks, reminders, habits & activity
+import { safeFetchJson } from '../utils/safeFetch';
 
 export interface SyncPayload {
   tasks?: any[];
@@ -35,34 +36,29 @@ export class ServerSyncService {
       return { ok: false, error: 'No backend token configured.' };
     }
 
-    try {
-      const targetUrl = (serverUrl || window.location.origin).replace(/\/$/, '');
-      const response = await fetch(`${targetUrl}/api/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
+    const targetUrl = (serverUrl || window.location.origin).replace(/\/$/, '');
+    const res = await safeFetchJson(`${targetUrl}/api/sync`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        return { ok: false, error: errJson.error || `HTTP ${response.status}` };
-      }
-
-      const data = await response.json();
-      return {
-        ok: true,
-        tasks: data.tasks,
-        reminders: data.reminders,
-        habits: data.habits,
-        settings: data.settings,
-        serverTime: data.serverTime,
-      };
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Network disconnected' };
+    if (!res.ok || !res.data) {
+      return { ok: false, error: res.error || `HTTP ${res.status}` };
     }
+
+    const data = res.data;
+    return {
+      ok: true,
+      tasks: data.tasks,
+      reminders: data.reminders,
+      habits: data.habits,
+      settings: data.settings,
+      serverTime: data.serverTime,
+    };
   }
 
   /**
@@ -78,7 +74,7 @@ export class ServerSyncService {
 
     try {
       const targetUrl = (serverUrl || window.location.origin).replace(/\/$/, '');
-      await fetch(`${targetUrl}/api/activity`, {
+      await safeFetchJson(`${targetUrl}/api/activity`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -86,7 +82,7 @@ export class ServerSyncService {
         },
         body: JSON.stringify({ source: 'client_active' }),
       });
-    } catch (e) {
+    } catch {
       // Quiet fail if offline
     }
   }
@@ -105,26 +101,21 @@ export class ServerSyncService {
       return { ok: false, error: 'Server token is required to use the server AI proxy.' };
     }
 
-    try {
-      const targetUrl = (serverUrl || window.location.origin).replace(/\/$/, '');
-      const response = await fetch(`${targetUrl}/api/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ message, history, mode }),
-      });
+    const targetUrl = (serverUrl || window.location.origin).replace(/\/$/, '');
+    const res = await safeFetchJson(`${targetUrl}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ message, history, mode }),
+    });
 
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        return { ok: false, error: data.error || 'Server AI call failed.' };
-      }
-
-      return { ok: true, reply: data.reply };
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Network error reaching server proxy.' };
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error || res.data?.error || 'Server AI call failed.' };
     }
+
+    return { ok: true, reply: res.data.reply };
   }
 
   /**
@@ -134,21 +125,16 @@ export class ServerSyncService {
     serverUrl: string,
     token: string
   ): Promise<{ ok: boolean; message?: string; error?: string }> {
-    try {
-      const targetUrl = (serverUrl || window.location.origin).replace(/\/$/, '');
-      const response = await fetch(`${targetUrl}/api/data/reset`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        return { ok: false, error: data.error || 'Failed to wipe server data.' };
-      }
-      return { ok: true, message: data.message };
-    } catch (err: any) {
-      return { ok: false, error: err?.message || 'Network error' };
+    const targetUrl = (serverUrl || window.location.origin).replace(/\/$/, '');
+    const res = await safeFetchJson(`${targetUrl}/api/data/reset`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error || res.data?.error || 'Failed to wipe server data.' };
     }
+    return { ok: true, message: res.data.message };
   }
 }

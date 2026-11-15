@@ -205,11 +205,21 @@ The server-side scheduler runs every minute (`* * * * *`):
 
 ---
 
-## 10. Free-Tier Deployment Guide
+## 10. Deployment Guide (Netlify ZIP / Git, Render, Railway)
 
-Deploy MAYA to **Render** or **Railway** in minutes:
+### Option A: Netlify (ZIP Upload or Git — Serverless Full-Stack)
+MAYA is preconfigured for zero-config deployment on **Netlify** via `netlify.toml`, `public/_redirects`, and `netlify/functions/api.ts`:
+1. Download the project ZIP (or push to GitHub/GitLab).
+2. In **Netlify**:
+   - **Git Deploy**: Import the repository — Netlify reads `netlify.toml` automatically (`npm run build`, publish `dist`, functions `netlify/functions`).
+   - **Local CLI / ZIP Build**: Run `npm install && npm run build` and deploy via `npx netlify-cli deploy --prod` (or upload the repository to Netlify with `netlify.toml` + `netlify/functions/api.ts`).
+3. Add Environment Variable in **Netlify Dashboard &rarr; Site configuration &rarr; Environment variables**:
+   - `GEMINI_API_KEY`: Your Google Gemini API key (used securely inside Netlify Function `/api/*`).
+4. Authorize your Netlify domain for **Unified Google Workspace Sign-In**:
+   - Open **Firebase Console &rarr; Authentication &rarr; Settings &rarr; Authorized domains** and add your `*.netlify.app` hostname (or custom domain).
+   - Signing in once with Google connects your mail ID to Calendar, Drive, Gmail, Docs, Sheets, Slides, Tasks, Meet, and Cloud Memory.
 
-### Option A: Render (Free Web Service)
+### Option B: Render (Free Web Service)
 1. Fork or push the repository to GitHub.
 2. Create a new **Web Service** on [Render.com](https://render.com).
 3. Connect your repository.
@@ -225,7 +235,7 @@ Deploy MAYA to **Render** or **Railway** in minutes:
    - `VAPID_SUBJECT`: `mailto:sirius@axiomsecurecrafts.com`.
 6. Click **Deploy**. Copy your `https://<service-name>.onrender.com` URL into Maya Settings.
 
-### Option B: Railway (Free Trial / Starter)
+### Option C: Railway (Free Trial / Starter)
 1. In [Railway.app](https://railway.app), click **New Project** &rarr; **Deploy from GitHub repo**.
 2. Add variables under the **Variables** tab (`GEMINI_API_KEY`, `MAYA_SERVER_TOKEN`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`).
 3. Railway automatically detects `npm run build` and `npm start`.

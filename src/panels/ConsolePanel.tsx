@@ -32,12 +32,13 @@ import {
   initAuth,
   googleSignIn,
   googleSignOut,
-  GoogleScopeMode,
   hasWorkspaceAccessToken,
 } from '../auth/googleAuth';
 import { CalendarService, CalendarEventItem } from '../services/calendarService';
 import { WorkspaceService, DriveFileItem, GmailMessageItem, GoogleTaskItem } from '../services/workspaceService';
 import { CloudMemoryService, CloudMemoryEntry } from '../services/cloudMemoryService';
+import { safeFetchJson } from '../utils/safeFetch';
+import firebaseConfig from '../../firebase-applet-config.json';
 import type { User } from 'firebase/auth';
 
 export type ConsoleTab = 'MAIN' | 'CALENDAR' | 'WORKSPACE' | 'CLOUD_MEMORY' | 'SEARCH' | 'TRANSCRIBE' | 'TASKS' | 'LOG';
@@ -185,30 +186,30 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
     }
   };
 
-  const handleGoogleLogin = async (
-    scopeMode: GoogleScopeMode = 'basic',
-    overrideHint?: string
-  ) => {
+  const handleGoogleLogin = async (overrideHint?: string) => {
     setIsSigningInGoogle(true);
     setCalendarAuthError(null);
     setWorkspaceError(null);
     try {
       const hint = overrideHint !== undefined ? overrideHint : loginEmailHint;
-      const res = await googleSignIn({ scopeMode, loginHint: hint || undefined });
+      const res = await googleSignIn({ loginHint: hint || undefined });
       if (res) {
         setGoogleUser(res.user);
         setHasWorkspaceToken(res.hasWorkspaceToken);
         setLoginEmailHint('');
+        const acctLabel = res.user.email || res.user.displayName || 'Google Account';
         if (res.hasWorkspaceToken) {
-          setWorkspaceSuccess(`Connected Workspace APIs as ${res.user.email || res.user.displayName}`);
-          setTimeout(() => setWorkspaceSuccess(null), 4000);
-          await loadCalendarEvents();
-          if (currentTab === 'WORKSPACE') {
-            await loadWorkspaceData();
-          }
+          const msg = `Connected entire Google Workspace & Cloud Memory as ${acctLabel}`;
+          setWorkspaceSuccess(msg);
+          setCalendarSyncSuccess(msg);
+          setTimeout(() => {
+            setWorkspaceSuccess(null);
+            setCalendarSyncSuccess(null);
+          }, 4000);
+          await Promise.all([loadCalendarEvents(), loadWorkspaceData()]);
         } else {
-          setWorkspaceSuccess(`Signed in as ${res.user.email || res.user.displayName}`);
-          setCalendarSyncSuccess(`Signed in as ${res.user.email || res.user.displayName}`);
+          setWorkspaceSuccess(`Signed in as ${acctLabel}`);
+          setCalendarSyncSuccess(`Signed in as ${acctLabel}`);
           setTimeout(() => {
             setWorkspaceSuccess(null);
             setCalendarSyncSuccess(null);
@@ -222,10 +223,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
         !err?.message?.includes('popup-closed-by-user')
       ) {
         console.error('Google sign in error:', err);
-        const msg =
-          scopeMode !== 'basic'
-            ? `${err?.message || 'Workspace API consent was restricted for this account.'} Use "Sign in with Google (All Mail IDs)" below to log in with any mail ID.`
-            : err?.message || 'Google sign-in was cancelled or failed.';
+        const msg = err?.message || 'Google sign-in failed. Please try again.';
         setCalendarAuthError(msg);
         setWorkspaceError(msg);
       }
@@ -583,18 +581,28 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
 
     setIsSearching(true);
     try {
-      const res = await fetch('/api/maya/search-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: searchQuery, mode: 'COMMAND', userName: 'Sirius' }),
-      });
-      const data = await res.json();
-      setSearchResults({
-        query: searchQuery,
-        answer: data.reply || 'No information retrieved.',
-        sources: data.sources || [],
-      });
-    } catch (err) {
+      const res = await safeFetchJson<{ reply?: string; sources?: Array<{ title: string; uri: string }> }>(
+        '/api/maya/search-chat',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: searchQuery, mode: 'COMMAND', userName: 'Sirius' }),
+        }
+      );
+      if (res.ok && res.data) {
+        setSearchResults({
+          query: searchQuery,
+          answer: res.data.reply || 'No information retrieved.',
+          sources: res.data.sources || [],
+        });
+      } else {
+        setSearchResults({
+          query: searchQuery,
+          answer: 'Live Search Grounding backend unavailable in static preview. Deploy Netlify Functions with GEMINI_API_KEY to enable live web grounding.',
+          sources: [],
+        });
+      }
+    } catch {
       setSearchResults({
         query: searchQuery,
         answer: 'Search grounding failed. Verify network connectivity.',
@@ -666,7 +674,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
 
     setIsTranscribing(true);
     try {
-      const res = await fetch('/api/maya/transcribe', {
+      const res = await safeFetchJson<{ transcription?: string }>('/api/maya/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -674,9 +682,12 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
           mimeType: transcribeMimeType,
         }),
       });
-      const data = await res.json();
-      setTranscriptionResult(data.transcription || 'Transcription complete.');
-    } catch (err) {
+      if (res.ok && res.data) {
+        setTranscriptionResult(res.data.transcription || 'Transcription complete.');
+      } else {
+        setTranscriptionResult('Transcription endpoint unavailable. Verify backend / Netlify function configuration.');
+      }
+    } catch {
       setTranscriptionResult('Transcription failed. Check network link.');
     } finally {
       setIsTranscribing(false);
@@ -935,7 +946,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
             </div>
           )}
 
-          {/* Not Authenticated: Official Google Sign-In Card */}
+          {/* Not Authenticated: Single Unified Google Sign-In Card */}
           {!googleUser && (
             <div className="p-5 bg-[#09090b] border border-[#2e2e31] flex flex-col items-center justify-center text-center space-y-3">
               <div className="w-10 h-10 rounded-full bg-[#141418] border border-[#2e2e31] flex items-center justify-center text-[var(--accent)]">
@@ -943,10 +954,10 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
               </div>
               <div className="max-w-md space-y-1">
                 <div className="font-hud text-sm font-bold text-[#cfcfca]">
-                  AUTHENTICATE GOOGLE CALENDAR
+                  SIGN IN WITH GOOGLE // ENTIRE WORKSPACE
                 </div>
                 <p className="text-[11px] text-[#6d6d69] leading-relaxed">
-                  Any Google or Gmail mail ID can sign in. Choose your account from the Google picker or enter a specific mail ID below.
+                  One sign-in connects Calendar, Drive, Gmail, Docs, Sheets, Slides, Tasks, Meet &amp; Cloud Memory for your mail ID.
                 </p>
               </div>
 
@@ -960,10 +971,9 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                 />
               </div>
 
-              {/* Official Google Sign-In Button (All Mail IDs) */}
-              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <div className="flex items-center justify-center pt-1">
                 <button
-                  onClick={() => handleGoogleLogin('basic')}
+                  onClick={() => handleGoogleLogin()}
                   disabled={isSigningInGoogle}
                   className="flex items-center gap-3 px-4 py-2 bg-white hover:bg-neutral-100 text-neutral-800 rounded font-sans text-xs font-medium shadow-md transition-all cursor-pointer disabled:opacity-60"
                 >
@@ -973,40 +983,32 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                     <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                     <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                   </svg>
-                  <span>{isSigningInGoogle ? 'Connecting with Google...' : 'Sign in with Google (All Mail IDs)'}</span>
-                </button>
-
-                <button
-                  onClick={() => handleGoogleLogin('standard')}
-                  disabled={isSigningInGoogle}
-                  className="px-3 py-2 bg-[#141418] hover:bg-[#1c1c24] border border-[#2e2e31] hover:border-[var(--accent)] text-[var(--accent)] font-hud text-[11px] font-bold tracking-wider cursor-pointer transition-all disabled:opacity-60"
-                >
-                  SYNC CALENDAR API
+                  <span>{isSigningInGoogle ? 'Connecting Google Workspace...' : 'Sign in with Google'}</span>
                 </button>
               </div>
 
               <div className="text-[10px] text-[#46464a] pt-1">
-                Supports all Gmail &amp; Google Workspace mail IDs. OAuth tokens are cached strictly in memory.
+                Supports all Gmail &amp; Google Workspace mail IDs. OAuth tokens stay strictly in memory.
               </div>
             </div>
           )}
 
-          {/* Signed in via Universal Auth without live Calendar API token */}
+          {/* Signed in after page refresh where in-memory token needs quick 1-click restore */}
           {googleUser && !hasWorkspaceToken && (
             <div className="p-3 bg-[#09090b] border border-amber-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px]">
               <div className="text-amber-200/90">
-                Signed in as <span className="font-bold text-white">{googleUser.email}</span>. Authorize Calendar API access to sync live events.
+                Signed in as <span className="font-bold text-white">{googleUser.email}</span>. Session token refreshed — click to reconnect your Google Workspace.
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  onClick={() => handleGoogleLogin('standard', googleUser.email || undefined)}
+                  onClick={() => handleGoogleLogin(googleUser.email || undefined)}
                   disabled={isSigningInGoogle}
                   className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-hud text-[10px] font-bold cursor-pointer"
                 >
-                  AUTHORIZE CALENDAR SYNC
+                  {isSigningInGoogle ? 'RECONNECTING...' : 'RECONNECT WORKSPACE'}
                 </button>
                 <button
-                  onClick={() => handleGoogleLogin('basic', '')}
+                  onClick={() => handleGoogleLogin('')}
                   disabled={isSigningInGoogle}
                   className="px-2.5 py-1 bg-[#141418] hover:bg-[#1f1f26] border border-[#2e2e31] text-[#cfcfca] font-hud text-[10px] cursor-pointer"
                 >
@@ -1319,7 +1321,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                     {googleUser.email || 'CONNECTED'}
                   </span>
                   <button
-                    onClick={() => handleGoogleLogin(hasWorkspaceToken ? 'standard' : 'basic', '')}
+                    onClick={() => handleGoogleLogin('')}
                     disabled={isSigningInGoogle}
                     title="Switch to another Google mail ID"
                     className="px-2 py-0.5 bg-[#141418] border border-[#2e2e31] hover:border-[var(--accent)] text-[#cfcfca] hover:text-[var(--accent)] text-[10px] font-hud cursor-pointer"
@@ -1344,7 +1346,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                 </div>
               ) : (
                 <button
-                  onClick={() => handleGoogleLogin('basic')}
+                  onClick={() => handleGoogleLogin()}
                   disabled={isSigningInGoogle}
                   className="flex items-center gap-1.5 px-3 py-1 bg-[#18140d] border border-[#7a5b28] text-[#e0a84c] text-xs font-hud tracking-wider cursor-pointer hover:bg-[#261f14]"
                 >
@@ -1369,15 +1371,15 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
             </div>
           )}
 
-          {/* Universal All-Mail-ID Google Sign-In Card when signed out */}
+          {/* Single Unified Google Sign-In Card when signed out */}
           {!googleUser && (
             <div className="p-4 bg-[#09090b] border border-[#2e2e31] flex flex-col items-center text-center space-y-3">
               <div className="max-w-lg space-y-1">
                 <div className="font-hud text-sm font-bold text-[#cfcfca]">
-                  LOG IN TO WORKSPACE WITH ANY MAIL ID
+                  CONNECT ENTIRE GOOGLE WORKSPACE WITH ONE SIGN-IN
                 </div>
                 <p className="text-[11px] text-[#6d6d69] leading-relaxed">
-                  All Gmail, Google Workspace, and custom Google-linked mail IDs are supported. Sign in with any mail ID to access Workspace &amp; Cloud Memory, or authorize full Workspace APIs.
+                  Sign in once with your Google or Gmail mail ID to immediately connect Calendar, Drive, Sheets, Gmail, Docs, Slides, Tasks, Chat, Meet &amp; Cloud Memory.
                 </p>
               </div>
 
@@ -1391,9 +1393,9 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                 />
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-2">
+              <div className="flex items-center justify-center">
                 <button
-                  onClick={() => handleGoogleLogin('basic')}
+                  onClick={() => handleGoogleLogin()}
                   disabled={isSigningInGoogle}
                   className="flex items-center gap-2.5 px-4 py-2 bg-white hover:bg-neutral-100 text-neutral-800 rounded font-sans text-xs font-medium shadow-md transition-all cursor-pointer disabled:opacity-60"
                 >
@@ -1403,48 +1405,25 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                     <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                     <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                   </svg>
-                  <span>{isSigningInGoogle ? 'Signing in...' : 'Sign in with Google (All Mail IDs)'}</span>
-                </button>
-
-                <button
-                  onClick={() => handleGoogleLogin('standard')}
-                  disabled={isSigningInGoogle}
-                  className="px-3 py-2 bg-[#141418] hover:bg-[#1c1c24] border border-[#2e2e31] hover:border-[#00E5FF] text-[#00E5FF] font-hud text-[11px] font-bold tracking-wider cursor-pointer transition-all disabled:opacity-60"
-                >
-                  SYNC DRIVE, GMAIL &amp; DOCS
-                </button>
-
-                <button
-                  onClick={() => handleGoogleLogin('full')}
-                  disabled={isSigningInGoogle}
-                  className="px-3 py-2 bg-[#141418] hover:bg-[#1c1c24] border border-[#2e2e31] hover:border-amber-400 text-amber-300 font-hud text-[11px] font-bold tracking-wider cursor-pointer transition-all disabled:opacity-60"
-                >
-                  FULL ORG (INCL. CHAT &amp; MEET)
+                  <span>{isSigningInGoogle ? 'Connecting Workspace...' : 'Sign in with Google'}</span>
                 </button>
               </div>
             </div>
           )}
 
-          {/* Signed in via Universal Auth without live Workspace API scopes */}
+          {/* Signed in after page refresh where in-memory token needs quick 1-click restore */}
           {googleUser && !hasWorkspaceToken && (
             <div className="p-3 bg-[#09090b] border border-amber-800/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px]">
               <div className="text-amber-200/90">
-                Logged in as <span className="font-bold text-white">{googleUser.email}</span>. Grant Workspace API permissions to sync live Drive, Gmail, Docs &amp; Tasks.
+                Signed in as <span className="font-bold text-white">{googleUser.email}</span>. Session token refreshed — reconnect to activate Drive, Gmail, Calendar, Docs &amp; Tasks.
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
-                  onClick={() => handleGoogleLogin('standard', googleUser.email || undefined)}
+                  onClick={() => handleGoogleLogin(googleUser.email || undefined)}
                   disabled={isSigningInGoogle}
-                  className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-hud text-[10px] font-bold cursor-pointer"
+                  className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-hud text-[10px] font-bold cursor-pointer"
                 >
-                  SYNC DRIVE, GMAIL &amp; DOCS
-                </button>
-                <button
-                  onClick={() => handleGoogleLogin('full', googleUser.email || undefined)}
-                  disabled={isSigningInGoogle}
-                  className="px-2.5 py-1 bg-[#141418] hover:bg-[#1f1f26] border border-[#2e2e31] text-[#00E5FF] font-hud text-[10px] cursor-pointer"
-                >
-                  FULL ORG SYNC
+                  {isSigningInGoogle ? 'RECONNECTING...' : 'RECONNECT GOOGLE WORKSPACE'}
                 </button>
               </div>
             </div>
@@ -1556,7 +1535,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                   {!googleUser
                     ? 'Sign in with Google to access Drive files.'
                     : !hasWorkspaceToken
-                    ? 'Click "SYNC DRIVE, GMAIL & DOCS" above to authorize Drive.'
+                    ? 'Click "RECONNECT GOOGLE WORKSPACE" above to refresh Drive session.'
                     : 'No Drive files loaded.'}
                 </div>
               ) : (
@@ -1595,7 +1574,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                   {!googleUser
                     ? 'Sign in with Google to view Gmail.'
                     : !hasWorkspaceToken
-                    ? 'Click "SYNC DRIVE, GMAIL & DOCS" above to authorize Gmail.'
+                    ? 'Click "RECONNECT GOOGLE WORKSPACE" above to refresh Gmail session.'
                     : 'No unread emails in inbox.'}
                 </div>
               ) : (
@@ -1648,7 +1627,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
                   {!googleUser
                     ? 'Sign in with Google to sync Tasks.'
                     : !hasWorkspaceToken
-                    ? 'Click "SYNC DRIVE, GMAIL & DOCS" above to authorize Tasks.'
+                    ? 'Click "RECONNECT GOOGLE WORKSPACE" above to refresh Tasks session.'
                     : 'No active Google tasks.'}
                 </div>
               ) : (
@@ -1694,7 +1673,7 @@ export const ConsolePanel: React.FC<ConsolePanelProps> = ({
               </div>
               <div className="text-[10px] text-[#6d6d69]">
                 Private persistent cloud memory stored in Firestore database{' '}
-                <span className="text-[#00E5FF]">ai-studio-axiomintelligenc-8b863e5a-454b-470c-871e-692c12a69d8c</span>.
+                <span className="text-[#00E5FF]">{firebaseConfig.firestoreDatabaseId}</span>.
               </div>
             </div>
 

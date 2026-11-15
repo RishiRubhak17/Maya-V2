@@ -778,7 +778,7 @@ class ToolBridge {
               ok: false,
               toolName: name,
               error: 'GOOGLE_CALENDAR_NOT_CONNECTED',
-              message: 'Google Calendar is not connected yet. Please click "Sign in with Google" in the CALENDAR tab or header.',
+              message: 'Google Workspace is not connected yet. Click "SIGN IN WITH GOOGLE" in the top bar or Workspace tab to connect your mail ID.',
             };
           }
           return {

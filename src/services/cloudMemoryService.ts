@@ -18,7 +18,7 @@ import { auth } from '../auth/googleAuth';
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 // Initialize Firestore targeting the user's specific database ID
-const DATABASE_ID = (firebaseConfig as any).firestoreDatabaseId || 'ai-studio-axiomintelligenc-8b863e5a-454b-470c-871e-692c12a69d8c';
+const DATABASE_ID = (firebaseConfig as any).firestoreDatabaseId || 'ai-studio-axiomintelligenc-85e1d5d9-6bc4-443b-9347-fb4b01628103';
 export const db = getFirestore(app, DATABASE_ID);
 
 export interface CloudMemoryEntry {

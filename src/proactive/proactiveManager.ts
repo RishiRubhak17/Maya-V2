@@ -1,5 +1,6 @@
 import { ProactiveSettings, CheckInLogEntry } from './types';
 import { relationshipMemoryStore } from './relationshipMemoryStore';
+import { safeFetchJson } from '../utils/safeFetch';
 
 export type ProactiveTriggerType =
   | 'idle_10m'
@@ -259,7 +260,7 @@ export class ProactiveManager {
 
     // 1. Attempt dynamic generation via server Gemini proxy
     try {
-      const res = await fetch('/api/maya/adaptive-checkin', {
+      const res = await safeFetchJson('/api/maya/adaptive-checkin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -272,12 +273,9 @@ export class ProactiveManager {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.ok && data.text) {
-          this.lastSpokenLine = data.text;
-          return data.text;
-        }
+      if (res.ok && res.data?.ok && res.data?.text) {
+        this.lastSpokenLine = res.data.text;
+        return res.data.text;
       }
     } catch (e) {
       // Server fetch failed, proceed to local contextual engine

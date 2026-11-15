@@ -47,12 +47,14 @@ import {
   RefreshCw,
   CheckCircle2,
 } from 'lucide-react';
-import { initAuth, googleSignIn } from './auth/googleAuth';
+import { initAuth, googleSignIn, hasWorkspaceAccessToken } from './auth/googleAuth';
 import { User } from 'firebase/auth';
 import { useMayaStore } from './store/useMayaStore';
 import { ServerSyncService, SyncState } from './services/serverSyncService';
 import { PushNotificationService } from './services/pushNotificationService';
 import { voiceSynthesisService } from './services/voiceSynthesisService';
+import { safeFetchJson } from './utils/safeFetch';
+import { getFallbackResponse } from './shared/mayaCore';
 
 export default function App() {
   const [hasBooted, setHasBooted] = useState<boolean>(() => {
@@ -64,6 +66,7 @@ export default function App() {
   const [inputLineValue, setInputLineValue] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [googleUser, setGoogleUser] = useState<User | null>(null);
+  const [hasWorkspaceToken, setHasWorkspaceToken] = useState<boolean>(() => hasWorkspaceAccessToken());
   const [isSigningInGoogle, setIsSigningInGoogle] = useState<boolean>(false);
   const [syncState, setSyncState] = useState<SyncState>('synced');
   const [inAppToast, setInAppToast] = useState<{ title: string; body: string } | null>(null);
@@ -354,11 +357,13 @@ export default function App() {
   // Initialize Firebase Google Auth listener
   useEffect(() => {
     const unsubscribe = initAuth(
-      (user) => {
+      (user, token) => {
         setGoogleUser(user);
+        setHasWorkspaceToken(Boolean(token || hasWorkspaceAccessToken()));
       },
       () => {
         setGoogleUser(null);
+        setHasWorkspaceToken(false);
       }
     );
     return () => unsubscribe();
@@ -448,13 +453,16 @@ export default function App() {
     syncWithServer();
   }, [syncWithServer]);
 
-  const handleGoogleConnect = async () => {
+  const handleGoogleConnect = async (loginHint?: string) => {
     setIsSigningInGoogle(true);
     try {
-      const res = await googleSignIn({ scopeMode: 'basic' });
+      const res = await googleSignIn({ loginHint });
       if (res) {
         setGoogleUser(res.user);
-        addSystemLog(`GOOGLE AUTH: Connected as ${res.user.email}. Workspace active.`);
+        setHasWorkspaceToken(res.hasWorkspaceToken);
+        addSystemLog(
+          `GOOGLE AUTH: Signed in as ${res.user.email}. Entire Google Workspace (Calendar, Drive, Gmail, Docs, Sheets, Slides, Tasks, Cloud Memory) connected.`
+        );
         setConsoleTab('WORKSPACE');
         setMobileActiveView('CONSOLE');
       } else {
@@ -468,7 +476,13 @@ export default function App() {
         !err?.message?.includes('popup-closed-by-user')
       ) {
         console.error('Google sign in error:', err);
-        addSystemLog(`GOOGLE AUTH NOTICE: ${err?.message || 'Authentication cancelled or failed.'}`);
+        const msg = err?.message || 'Authentication cancelled or failed.';
+        addSystemLog(`GOOGLE AUTH NOTICE: ${msg}`);
+        setInAppToast({
+          title: 'Google Sign-In Notice',
+          body: msg,
+        });
+        setTimeout(() => setInAppToast(null), 9000);
       }
       setConsoleTab('WORKSPACE');
       setMobileActiveView('CONSOLE');
@@ -617,7 +631,7 @@ export default function App() {
           ? `Nicknames: ${relMem.nicknames.join(', ')}. Milestones: ${relMem.milestones.map((m) => m.title).join('; ')}. Inside jokes: ${relMem.insideJokes.join('; ')}`
           : '';
 
-        const res = await fetch('/api/maya/chat', {
+        const fetchRes = await safeFetchJson('/api/maya/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -631,7 +645,15 @@ export default function App() {
           }),
         });
 
-        const data = await res.json();
+        const data =
+          fetchRes.ok && fetchRes.data
+            ? fetchRes.data
+            : {
+                reply: getFallbackResponse(userText, currentMode, settings.userName),
+                sources: [],
+                functionCalls: [],
+                detectedEmotion: null,
+              };
 
         // Handle detected emotion
         if (data.detectedEmotion) {
@@ -700,7 +722,7 @@ export default function App() {
                   toolSummaries.push(`📅 **Google Calendar (${events.length} upcoming events)**:\n${list}`);
                 }
               } else if (res.error === 'GOOGLE_CALENDAR_NOT_CONNECTED') {
-                toolSummaries.push('⚠️ **Google Calendar Not Connected**: Click "CONNECT CALENDAR" in the top bar or CALENDAR tab to grant access.');
+                toolSummaries.push('⚠️ **Google Workspace Not Connected**: Click "SIGN IN WITH GOOGLE" (or "RECONNECT WORKSPACE") in the top bar or WORKSPACE tab to authorize access.');
               } else {
                 toolSummaries.push(`⚠️ **Calendar Error**: ${res.message || res.error}`);
               }
@@ -709,7 +731,7 @@ export default function App() {
                 const dateStr = res.result.start ? new Date(res.result.start).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
                 toolSummaries.push(`✅ **Scheduled on Google Calendar**: "${res.result.summary}" for ${dateStr}.`);
               } else if (res.error === 'GOOGLE_CALENDAR_NOT_CONNECTED') {
-                toolSummaries.push('⚠️ **Google Calendar Not Connected**: Connect your Google account in the top bar or CALENDAR tab to schedule events.');
+                toolSummaries.push('⚠️ **Google Workspace Not Connected**: Click "SIGN IN WITH GOOGLE" (or "RECONNECT WORKSPACE") in the top bar or WORKSPACE tab to schedule events.');
               } else {
                 toolSummaries.push(`⚠️ **Scheduling Error**: ${res.message || res.error}`);
               }
@@ -1411,25 +1433,35 @@ export default function App() {
             <span>{isKillSwitchActive ? 'TOOLS LOCKED' : 'KILL SWITCH'}</span>
           </button>
 
-          {/* Google Workspace & Cloud Memory Status & Connect Pill */}
-          {googleUser ? (
+          {/* Unified Google Sign-In & Entire Workspace Status Pill */}
+          {googleUser && hasWorkspaceToken ? (
             <button
               onClick={() => {
                 setConsoleTab('WORKSPACE');
                 setMobileActiveView('CONSOLE');
               }}
-              title={`Google Workspace connected (${googleUser.email || googleUser.displayName}). Drive, Sheets, Gmail, Docs, Tasks & Meet synced.`}
+              title={`Signed in as ${googleUser.email || googleUser.displayName}. Entire Google Workspace (Calendar, Drive, Gmail, Docs, Sheets, Slides, Tasks & Cloud Memory) connected.`}
               className="flex items-center gap-1.5 px-2 py-0.5 bg-[#0d1612] border border-[#3e7b5c] text-[#5cb887] text-[10px] font-hud tracking-wider cursor-pointer hover:bg-[#14231c] transition-all"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-[#5cb887] animate-pulse" />
               <HardDrive size={11} className="text-[#5cb887]" />
               <span className="hidden sm:inline">WORKSPACE SYNCED</span>
             </button>
+          ) : googleUser ? (
+            <button
+              onClick={() => handleGoogleConnect(googleUser.email || undefined)}
+              disabled={isSigningInGoogle}
+              title={`Signed in as ${googleUser.email || googleUser.displayName}. Click to refresh Google Workspace access token for this session.`}
+              className="flex items-center gap-1.5 px-2 py-0.5 bg-[#18140d] border border-[#7a5b28] text-[#e0a84c] text-[10px] font-hud tracking-wider cursor-pointer hover:bg-[#261f14] transition-all disabled:opacity-60"
+            >
+              <RefreshCw size={11} className={isSigningInGoogle ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">{isSigningInGoogle ? 'RECONNECTING...' : 'RECONNECT WORKSPACE'}</span>
+            </button>
           ) : (
             <button
-              onClick={handleGoogleConnect}
+              onClick={() => handleGoogleConnect()}
               disabled={isSigningInGoogle}
-              title="Connect Google Workspace (Drive, Sheets, Gmail, Docs, Tasks, Meet & Calendar)"
+              title="Single Sign-In with Google to connect your mail ID to the entire Google Workspace & Cloud Memory"
               className="flex items-center gap-1.5 px-2 py-0.5 bg-[#18140d] border border-[#7a5b28] text-[#e0a84c] text-[10px] font-hud tracking-wider cursor-pointer hover:bg-[#261f14] transition-all disabled:opacity-60"
             >
               <svg className="w-3 h-3 shrink-0" viewBox="0 0 48 48">
@@ -1438,7 +1470,7 @@ export default function App() {
                 <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                 <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
               </svg>
-              <span className="hidden sm:inline">{isSigningInGoogle ? 'CONNECTING...' : 'CONNECT WORKSPACE'}</span>
+              <span className="hidden sm:inline">{isSigningInGoogle ? 'SIGNING IN...' : 'SIGN IN WITH GOOGLE'}</span>
             </button>
           )}
 
